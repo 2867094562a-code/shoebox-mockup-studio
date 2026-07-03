@@ -392,16 +392,8 @@ function makeShoeBox(model) {
   const lidOverhang = 0.07;
   const group = new THREE.Group();
 
-  const base = new THREE.Mesh(
-    new THREE.BoxGeometry(length, baseHeight, width),
-    makeBoxMaterials(model, "base")
-  );
-  base.position.y = baseHeight / 2;
-  base.castShadow = true;
-  base.receiveShadow = true;
+  const base = makeBaseShell(model, length, width, baseHeight);
   group.add(base);
-  addEdges(base, 0x1f2226, 0.2, group);
-  addBaseInterior(group, length, width, baseHeight);
 
   const lidPivot = new THREE.Group();
   lidPivot.userData.kind = "lidPivot";
@@ -428,6 +420,46 @@ function makeShoeBox(model) {
   group.rotation.y = -0.55;
   group.rotation.x = -0.02;
   applyOpenProgress(group, openProgress);
+  return group;
+}
+
+function makeBaseShell(model, length, width, height) {
+  const group = new THREE.Group();
+  const thickness = Math.max(0.028, height * 0.08);
+  const wallHeight = height - thickness;
+  const inside = makeInsideMaterial();
+
+  const bottom = new THREE.Mesh(
+    new THREE.BoxGeometry(length, thickness, width),
+    makeFaceMaterials(3, material(makeTexture(model, "bottom", "base"), 0.72), inside)
+  );
+  bottom.position.y = thickness / 2;
+  bottom.castShadow = true;
+  bottom.receiveShadow = true;
+  group.add(bottom);
+  addEdges(bottom, 0x1f2226, 0.12, group);
+
+  const front = makeBoxPanel(length, wallHeight, thickness, 4, material(makeTexture(model, "long", "base"), 0.64));
+  front.position.set(0, thickness + wallHeight / 2, width / 2 - thickness / 2);
+  group.add(front);
+  addEdges(front, 0x1f2226, 0.16, group);
+
+  const back = makeBoxPanel(length, wallHeight, thickness, 5, material(makeTexture(model, "long", "base"), 0.64));
+  back.position.set(0, thickness + wallHeight / 2, -width / 2 + thickness / 2);
+  group.add(back);
+  addEdges(back, 0x1f2226, 0.16, group);
+
+  const sideDepth = Math.max(0.01, width - thickness * 2);
+  const left = makeBoxPanel(thickness, wallHeight, sideDepth, 1, material(makeTexture(model, "short", "base"), 0.64));
+  left.position.set(-length / 2 + thickness / 2, thickness + wallHeight / 2, 0);
+  group.add(left);
+  addEdges(left, 0x1f2226, 0.16, group);
+
+  const right = makeBoxPanel(thickness, wallHeight, sideDepth, 0, material(makeTexture(model, "short", "base"), 0.64));
+  right.position.set(length / 2 - thickness / 2, thickness + wallHeight / 2, 0);
+  group.add(right);
+  addEdges(right, 0x1f2226, 0.16, group);
+
   return group;
 }
 
@@ -670,7 +702,7 @@ function makeInsideMaterial() {
     color: 0xc7aa7f,
     roughness: 0.9,
     metalness: 0,
-    side: THREE.FrontSide
+    side: THREE.DoubleSide
   });
 }
 
@@ -979,36 +1011,64 @@ async function exportOpenCloseVideo() {
   const mimeType = mp4Type || "";
   const extension = isMp4 ? "mp4" : "webm";
   const chunks = [];
-  const stream = renderer.domElement.captureStream(30);
-  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
-  setExportStatus(isMp4 ? "录制 MP4..." : "录制 WebM...");
+  setExportStatus(isMp4 ? "录制 1920x1080 MP4..." : "录制 1920x1080 WebM...");
   els.exportVideo.disabled = true;
   const originalSpin = autoSpin;
-  autoSpin = false;
-  els.toggleSpin.classList.remove("active");
+  const originalPixelRatio = renderer.getPixelRatio();
+  const originalSize = renderer.getSize(new THREE.Vector2());
+  const originalAspect = camera.aspect;
+  let stream;
 
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  };
+  try {
+    autoSpin = false;
+    els.toggleSpin.classList.remove("active");
+    setKindVisibility("dimension", false);
+    setKindVisibility("edge", false);
+    renderer.setPixelRatio(1);
+    renderer.setSize(1920, 1080, false);
+    camera.aspect = 16 / 9;
+    camera.updateProjectionMatrix();
+    setOpenProgress(0);
+    renderer.render(scene, camera);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
 
-  const stopped = new Promise((resolve) => {
-    recorder.onstop = resolve;
-  });
+    stream = renderer.domElement.captureStream(30);
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
-  recorder.start();
-  await runOpenCloseTimeline(5200);
-  recorder.stop();
-  await stopped;
-  stream.getTracks().forEach((track) => track.stop());
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
 
-  const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-  downloadBlob(blob, `${selectedModel.id}-open-close.${extension}`);
-  autoSpin = originalSpin;
-  els.toggleSpin.classList.toggle("active", autoSpin);
-  els.exportVideo.disabled = false;
-  setOpenProgress(0);
-  setExportStatus(isMp4 ? "MP4 已导出" : "已导出 WebM");
+    const stopped = new Promise((resolve) => {
+      recorder.onstop = resolve;
+    });
+
+    recorder.start(250);
+    await runOpenCloseTimeline(5200);
+    recorder.stop();
+    await stopped;
+
+    const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+    downloadBlob(blob, `${selectedModel.id}-open-close.${extension}`);
+    setExportStatus(isMp4 ? "MP4 已导出" : "已导出 WebM");
+  } catch (error) {
+    console.error(error);
+    setExportStatus("导出失败，请重试");
+  } finally {
+    stream?.getTracks().forEach((track) => track.stop());
+    autoSpin = originalSpin;
+    els.toggleSpin.classList.toggle("active", autoSpin);
+    renderer.setPixelRatio(originalPixelRatio);
+    renderer.setSize(originalSize.x, originalSize.y, false);
+    camera.aspect = originalAspect;
+    camera.updateProjectionMatrix();
+    syncDimensionVisibility();
+    syncEdgeVisibility();
+    resizeRenderer();
+    els.exportVideo.disabled = false;
+    setOpenProgress(0);
+  }
 }
 
 function runOpenCloseTimeline(duration) {
@@ -1086,6 +1146,13 @@ function stripExportHelpers(object) {
     if (child.userData.kind === "dimension") remove.push(child);
   });
   remove.forEach((child) => child.parent?.remove(child));
+}
+
+function setKindVisibility(kind, visible) {
+  if (!activeBox) return;
+  activeBox.traverse((child) => {
+    if (child.userData.kind === kind) child.visible = visible;
+  });
 }
 
 function downloadBlob(blob, filename) {
