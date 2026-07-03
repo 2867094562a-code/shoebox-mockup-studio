@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>鞋盒样机预览系统</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/build/three.module.js",
+          "three/addons/": "./vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="control-panel" aria-label="鞋盒配置">
+        <header class="brand-block">
+          <p class="eyebrow">Mockup Studio</p>
+          <h1>鞋盒样机预览</h1>
+        </header>
+
+        <section class="panel-section">
+          <div class="section-title">
+            <span>模型</span>
+            <span id="modelCount">12 款</span>
+          </div>
+          <div class="segmented" role="tablist" aria-label="男女款">
+            <button class="segment active" data-gender="male" type="button">男鞋</button>
+            <button class="segment" data-gender="female" type="button">女鞋</button>
+          </div>
+          <label class="field-label" for="countrySelect">国家 / 市场</label>
+          <select id="countrySelect" class="select-input"></select>
+          <div id="modelList" class="model-list" aria-label="模型列表"></div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-title">
+            <span>贴图</span>
+            <span id="templateScale">40 px/cm</span>
+          </div>
+          <label class="field-label" for="themeSelect">示例设计</label>
+          <select id="themeSelect" class="select-input">
+            <option value="track">运动零售</option>
+            <option value="atelier">精品女鞋</option>
+            <option value="heritage">经典皮鞋</option>
+            <option value="mono">极简白标</option>
+          </select>
+          <label class="field-label" for="textureMode">贴图模式</label>
+          <select id="textureMode" class="select-input">
+            <option value="dieline">整张刀模贴图</option>
+            <option value="cover">单图满铺</option>
+          </select>
+          <label class="field-label" for="textureUpload">自定义贴图</label>
+          <input id="textureUpload" class="file-input" type="file" accept="image/png,image/jpeg,image/webp" />
+          <div class="texture-actions">
+            <button id="resetTexture" class="quiet-button" type="button">重置示例</button>
+            <button id="downloadTemplate" class="primary-button" type="button">下载兼容刀模</button>
+          </div>
+          <button id="downloadAllTemplates" class="quiet-button wide-button spaced-button" type="button">下载全部刀模</button>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-title">
+            <span>动画</span>
+            <span id="openValue">0%</span>
+          </div>
+          <button id="playOpen" class="primary-button wide-button" type="button">播放开盒</button>
+          <label class="field-label" for="openProgress">开合进度</label>
+          <input id="openProgress" class="range-input" type="range" min="0" max="100" value="0" />
+        </section>
+
+        <section class="panel-section">
+          <div class="section-title">
+            <span>导出</span>
+            <span id="exportStatus">就绪</span>
+          </div>
+          <div class="export-grid">
+            <button id="exportVideo" class="primary-button" type="button">导出 MP4 开合</button>
+            <select id="modelFormat" class="select-input">
+              <option value="glb">GLB 嵌入贴图</option>
+              <option value="gltf">GLTF 分离贴图</option>
+              <option value="usdz">USDZ 贴图模型</option>
+            </select>
+          </div>
+          <button id="exportModel" class="quiet-button wide-button" type="button">导出 3D 模型</button>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-title">
+            <span>显示</span>
+            <span>开关</span>
+          </div>
+          <label class="switch-row">
+            <span>尺寸</span>
+            <input id="toggleDimensions" type="checkbox" checked />
+          </label>
+          <label class="switch-row">
+            <span>比例</span>
+            <input id="toggleRatios" type="checkbox" checked />
+          </label>
+          <label class="switch-row">
+            <span>结构线</span>
+            <input id="toggleEdges" type="checkbox" checked />
+          </label>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-title">
+            <span>贴图比例</span>
+            <span id="ratioBadge">L:W:H</span>
+          </div>
+          <dl id="ratioTable" class="ratio-table"></dl>
+        </section>
+      </aside>
+
+      <main class="preview-area">
+        <div class="topbar">
+          <div>
+            <p id="currentMarket" class="eyebrow">US / 男鞋</p>
+            <h2 id="currentTitle">标准男鞋盒</h2>
+          </div>
+          <div class="view-actions">
+            <button class="icon-button" id="viewFront" type="button" aria-label="正面视角" title="正面视角">F</button>
+            <button class="icon-button" id="viewTop" type="button" aria-label="俯视视角" title="俯视视角">T</button>
+            <button class="icon-button" id="toggleSpin" type="button" aria-label="自动旋转" title="自动旋转">↻</button>
+          </div>
+        </div>
+
+        <section class="stage-wrap" aria-label="3D 预览">
+          <canvas id="sceneCanvas"></canvas>
+          <div class="dimension-strip">
+            <div>
+              <span>长度</span>
+              <strong id="dimLength">35.5 cm</strong>
+            </div>
+            <div>
+              <span>宽度</span>
+              <strong id="dimWidth">20.5 cm</strong>
+            </div>
+            <div>
+              <span>高度</span>
+              <strong id="dimHeight">12.5 cm</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="spec-band">
+          <div>
+            <span class="label">模板画布</span>
+            <strong id="templateSize">2420 × 1620 px</strong>
+          </div>
+          <div>
+            <span class="label">顶面比例</span>
+            <strong id="topRatio">1.73:1</strong>
+          </div>
+          <div>
+            <span class="label">长边比例</span>
+            <strong id="longRatio">2.84:1</strong>
+          </div>
+          <div>
+            <span class="label">短边比例</span>
+            <strong id="shortRatio">1.64:1</strong>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
